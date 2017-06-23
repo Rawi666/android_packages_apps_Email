@@ -1784,7 +1784,7 @@ public class ImapService extends Service {
                             LocalMessageInfo.PROJECTION,
                             EmailContent.MessageColumns.ACCOUNT_KEY + "=?"
                                     + " AND " + MessageColumns.MAILBOX_KEY + "=?"
-                                    + " AND " + MessageColumns.SERVER_ID + ">=?",
+                                    + " AND " + MessageColumns.SERVER_ID + "=?",
                             new String[] {
                                     String.valueOf(acct.mId),
                                     String.valueOf(mailbox.mId),
@@ -1868,29 +1868,35 @@ public class ImapService extends Service {
 
             // 8.- Remove remote deleted messages
             for (final Message remoteMessage : remoteMessages) {
-                if (remoteMessage.isSet(Flag.DELETED)) {
-                    LocalMessageInfo info = localMessageMap.get(remoteMessage.getUid());
-                    if (info == null) {
-                        continue;
-                    }
-
-                    // Delete associated data (attachment files)
-                    // Attachment & Body records are auto-deleted when we delete the Message record
-                    AttachmentUtilities.deleteAllAttachmentFiles(ctx, acct.mId, info.mId);
-
-                    // Delete the message itself
-                    final Uri uriToDelete = ContentUris.withAppendedId(
-                            EmailContent.Message.CONTENT_URI, info.mId);
-                    resolver.delete(uriToDelete, null, null);
-
-                    // Delete extra rows (e.g. updated or deleted)
-                    final Uri updateRowToDelete = ContentUris.withAppendedId(
-                            EmailContent.Message.UPDATED_CONTENT_URI, info.mId);
-                    resolver.delete(updateRowToDelete, null, null);
-                    final Uri deleteRowToDelete = ContentUris.withAppendedId(
-                            EmailContent.Message.DELETED_CONTENT_URI, info.mId);
-                    resolver.delete(deleteRowToDelete, null, null);
+                if (!remoteMessage.isSet(Flag.DELETED)) {
+                    continue;
                 }
+
+                // Make sure we don't sync messages (again) that we deleted locally
+                // before and now get a flag update (DELETED being set) for now.
+                unsyncedMessages.remove(remoteMessage);
+
+                LocalMessageInfo info = localMessageMap.get(remoteMessage.getUid());
+                if (info == null) {
+                    continue;
+                }
+
+                // Delete associated data (attachment files)
+                // Attachment & Body records are auto-deleted when we delete the Message record
+                AttachmentUtilities.deleteAllAttachmentFiles(ctx, acct.mId, info.mId);
+
+                // Delete the message itself
+                final Uri uriToDelete = ContentUris.withAppendedId(
+                        EmailContent.Message.CONTENT_URI, info.mId);
+                resolver.delete(uriToDelete, null, null);
+
+                // Delete extra rows (e.g. updated or deleted)
+                final Uri updateRowToDelete = ContentUris.withAppendedId(
+                        EmailContent.Message.UPDATED_CONTENT_URI, info.mId);
+                resolver.delete(updateRowToDelete, null, null);
+                final Uri deleteRowToDelete = ContentUris.withAppendedId(
+                        EmailContent.Message.DELETED_CONTENT_URI, info.mId);
+                resolver.delete(deleteRowToDelete, null, null);
             }
 
             // 9.- Load unsynced messages
